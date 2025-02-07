@@ -1,0 +1,15 @@
+matplotlib==3.10.0
+numpy==2.2.1
+pandas==2.2.3
+Pillow==10.4.0
+plotly==6.0.0
+streamlit==1.41.1
+streamlit-player==0.1.5
+cadquery==2.5.2
+XlsxWriter==3.2.0
+pyvista==0.43.10
+opencv-python==4.11.0.86
+openpyxl==3.1.5
+streamlit-stl==0.0.6
+
+
