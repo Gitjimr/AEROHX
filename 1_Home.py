@@ -270,13 +270,13 @@ if 'active_page' not in st.session_state:
     st.session_state.st_coordinates = []
     st.session_state.st_upload_coordinates = False
 
-    st.session_state.st_chord = 1.
-    st.session_state.st_h_c = 0.05
-    st.session_state.st_p_v_h = 1.8
-    st.session_state.st_p_h_c = 0.6
-    st.session_state.st_num_rows = 6
-    st.session_state.st_num_cols = 4
-    st.session_state.st_length = 3.
+    st.session_state.st_chord = 7.
+    st.session_state.st_h_c = 0.12
+    st.session_state.st_p_v_h = 6.5
+    st.session_state.st_p_h_c = 2.5
+    st.session_state.st_num_rows = 7
+    st.session_state.st_num_cols = 5
+    st.session_state.st_length = 100.
 
     st.session_state.st_set_scale = False
     st.session_state.st_scale = 2.
