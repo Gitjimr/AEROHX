@@ -906,3 +906,5 @@ if st.session_state.extrude_button:
             st.error(f"Erro ao gerar modelo: {e}")
 else:
   col2.markdown("")
+
+# https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
