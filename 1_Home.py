@@ -44,6 +44,7 @@ import streamlit_stl
 from streamlit_stl import stl_from_file
 
 import io
+import time
 
 ################# FUNCTIONS #################
 
@@ -252,6 +253,309 @@ def manter_extrude_button_ativo():
 def desativ_extrude_button():
     st.session_state.extrude_button = False
 
+def suavizar_contorno(coordinates, suavizar, suavizacao):
+    # Suavização **
+    if suavizar is True:
+        # Converter a lista de pontos para um array NumPy com o formato adequado para contornos do OpenCV
+        contour = np.array(coordinates, dtype=np.float32).reshape((-1, 1, 2))
+
+        # Calcular o perímetro do contorno
+        peri = cv2.arcLength(contour, True)
+
+        # Suavizar o contorno usando approxPolyDP
+        epsilon = suavizacao * peri  # ajuste esse valor conforme necessário
+        smoothed_contour = cv2.approxPolyDP(contour, epsilon, True)
+
+        # Converter o contorno suavizado para uma lista de tuplas (x, y)
+        smoothed_points = [(float(x), float(y)) for [x, y] in smoothed_contour[:, 0]]
+
+        coordinates = smoothed_points
+
+    return coordinates
+
+def adicionar_conexoes_entre_linhas(
+    modelo_combinado,
+    s1,
+    pitch_h_,
+    pitch_v_,
+    length_,
+    num_cols,
+    num_rows,
+    set_scale,
+    my_bar
+): #   CONEXÕES ENTRE LINHAS
+
+    result_cima = (
+        cq.Workplane("XY")
+        .placeSketch(s1)
+        .revolve(
+            angleDegrees=180,
+            axisStart=(1, pitch_v_, 0),  # mesmo X e Z
+            axisEnd=(0, pitch_v_, 0)  # variação apenas em Y
+        )
+    )
+
+    #exporters.export(result_cima, "revolve_cima.stl")
+
+    result_baixo = (
+        cq.Workplane("XY")
+        .placeSketch(s1)
+        .revolve(
+            angleDegrees=180,
+            axisStart=(0, pitch_v_, 0),  # mesmo X e Z
+            axisEnd=(1, pitch_v_, 0)  # variação apenas em Y
+        )
+    )
+
+    #exporters.export(result_baixo, "revolve_baixo.stl")
+
+    modelo_final = modelo_combinado
+
+    for i in range(num_cols):
+
+        for j in range(num_rows - 1):
+
+            if j % 2 == 0 and i % 2 == 0:
+                add_curva = result_baixo.translate((pitch_h_ * i, pitch_v_ * 2 * j, 0))
+            elif j % 2 != 0 and i % 2 == 0:
+                add_curva = result_cima.translate(
+                    (pitch_h_ * i, pitch_v_ * 2 * j, length_ if set_scale is True else length))
+
+            elif j % 2 == 0 and i % 2 != 0:
+                add_curva = result_baixo.translate((pitch_h_ * i, pitch_v_ * 2 * j + pitch_v_, 0))
+            elif j % 2 != 0 and i % 2 != 0:
+                add_curva = result_cima.translate((pitch_h_ * i, pitch_v_ * 2 * j + pitch_v_,
+                                                   length_ if set_scale is True else length))
+
+            modelo_final = modelo_final + add_curva
+
+    return modelo_final
+
+def adicionar_conexoes_entre_colunas(
+    modelo_final,
+    s1,
+    pitch_h_,
+    pitch_v_,
+    chord_,
+    num_cols,
+    num_rows,
+    length_,
+    my_bar
+):  #   CONEXÕES ENTRE COLUNAS
+
+    r_curva = ((pitch_h_ - 2 * chord_) / 4)  # R Curva 1: r_curva + chord_ | R Curva 2: r_curva
+
+    wp = cq.Workplane("XY")
+
+    ## 1. Subida (result_teste1)
+    result_teste1 = (
+        wp
+        .placeSketch(s1)
+        .consolidateWires()
+        .revolve(
+            angleDegrees=90,
+            axisStart=(0, -pitch_v_ / 2, 0),  # eixo com Y fixo em -pitch_v_/2
+            axisEnd=(1, -pitch_v_ / 2, 0)  # variação somente em X
+        )
+    )
+
+    ## 2. Curva 1 (result_teste2)
+    result_teste2 = (
+        wp
+        .placeSketch(s1)
+        .consolidateWires()
+        .revolve(
+            angleDegrees=180,
+            axisStart=(r_curva + chord_, 0, 0),  # eixo em X = r_curva + chord_
+            axisEnd=(r_curva + chord_, 1, 0),  # variação em Y
+            combine=True
+        )
+        .rotate((0, 0, 0), (1, 0, 0), 90)
+    )
+    translacao_curva1 = cq.Vector(0, -pitch_v_ / 2, pitch_v_ / 2)
+    result_teste2_alinhado = result_teste2.translate(translacao_curva1)
+
+    ## 3. Reta (result_teste3)
+    result_teste3 = (
+        wp
+        .placeSketch(s1)
+        .consolidateWires()
+        .extrude(pitch_v_ * 2, combine=True)
+        .rotate((0, 0, 0), (0, 0, 1), 180)
+        .rotate((0, 0, 0), (1, 0, 0), 90)
+    )
+    translacao_reta = cq.Vector(2 * (r_curva + chord_), 3 * pitch_v_ / 2, pitch_v_ / 2)
+    result_teste3_alinhado = result_teste3.translate(translacao_reta)
+
+    ## 4. Curva 2 (result_teste4)
+    result_teste4 = (
+        wp
+        .placeSketch(s1)
+        .consolidateWires()
+        .revolve(
+            angleDegrees=180,
+            axisStart=(-r_curva, 1, 0),  # eixo em X = -r_curva
+            axisEnd=(-r_curva, 0, 0),  # variação em Y
+            combine=True
+        )
+        .rotate((0, 0, 0), (1, 0, 0), -90)
+    )
+    translacao_curva2 = cq.Vector(4 * (r_curva) + 2 * chord_, -pitch_v_ / 2, pitch_v_ / 2)
+    translacao_curva2_ =  cq.Vector(0, pitch_v_*2, 0) #  Para casos com tub reta
+    result_teste4_alinhado = result_teste4.translate(translacao_curva2)
+
+    ## 5. Descida (result_teste5)
+    result_teste5 = (
+        wp
+        .placeSketch(s1)
+        .consolidateWires()
+        .revolve(
+            angleDegrees=90,
+            axisStart=(0, -pitch_v_ / 2, 0),  # eixo com Y fixo em -pitch_v_/2
+            axisEnd=(1, -pitch_v_ / 2, 0),  # variação somente em X
+            combine=True
+        )
+        .rotate((0, 0, 0), (1, 0, 0), 90)
+    )
+    translacao_descida = cq.Vector(4 * (r_curva) + 2 * chord_, -pitch_v_ / 2, pitch_v_ / 2)
+    translacao_descida_ = cq.Vector(0, pitch_v_*2, 0)  # Para casos com tub reta
+    result_teste5_alinhado = result_teste5.translate(translacao_descida)
+
+
+    pipeline = (
+        result_teste1
+        .union(result_teste2_alinhado)
+        .union(result_teste4_alinhado)
+        .union(result_teste5_alinhado)
+    )
+    #exporters.export(pipeline, "conexao_h.stl")
+
+    if num_rows % 2 == 0:
+        pipeline_ = (
+            result_teste1
+            .union(result_teste2_alinhado)
+            .union(result_teste3_alinhado)
+            .union(result_teste4_alinhado.translate(translacao_curva2_))
+            .union(result_teste5_alinhado.translate(translacao_descida_))
+        )
+        # exporters.export(pipeline_, "conexao_h_.stl")
+
+    ## ADIÇÃO DE CONEXÕES ENTRE COLUNAS
+
+    modelo_final2 = modelo_final
+
+    pipeline_fit_K = 1.2
+
+    pipeline_fit = (
+        wp
+        .placeSketch(s1)
+        .extrude(pitch_v_ * pipeline_fit_K)
+    )  # **
+
+    ## Pré-computa as rotações que são constantes
+    base_pipeline = pipeline.rotate((0, 0, 0), (1, 0, 0), 180)
+    base_pipeline_fit = pipeline_fit.rotate((0, 0, 0), (1, 0, 0), 180)
+
+    for i in range(num_cols - 1):
+        if i % 2 == 0:
+            ## Translação para o ramo com rotação
+            translacao_pipeline1 = cq.Vector(pitch_h_ * i, (pitch_v_ * (num_rows - 1)) * 2, 0)
+
+            ## Use o objeto já rotacionado e apenas aplique a translação diferente
+            pipeline1 = base_pipeline.translate(translacao_pipeline1 + cq.Vector(0, 0, -pitch_v_*pipeline_fit_K))
+            pipeline1_fit1 = base_pipeline_fit.translate(translacao_pipeline1)
+            pipeline1_fit2 = base_pipeline_fit.translate(
+                translacao_pipeline1 + cq.Vector(pitch_h_, pitch_v_, 0))
+
+            modelo_final2 = modelo_final2 + pipeline1 + pipeline1_fit1 + pipeline1_fit2
+
+        else:
+            ## Translação para o ramo sem rotação
+            translacao_pipeline2 = cq.Vector(pitch_h_ * i, pitch_v_, length_)
+
+            pipeline2 = pipeline.translate(translacao_pipeline2 + cq.Vector(0, 0, pitch_v_*pipeline_fit_K))
+            pipeline2_fit1 = pipeline_fit.translate(translacao_pipeline2)
+            pipeline2_fit2 = pipeline_fit.translate(translacao_pipeline2 + cq.Vector(pitch_h_, -pitch_v_, 0))
+
+            modelo_final2 = modelo_final2 + pipeline2 + pipeline2_fit1 + pipeline2_fit2
+
+    #exporters.export(modelo_final2, 'hx_final.stl')
+
+    return modelo_final2
+
+def adicionar_fittings(
+    modelo_final2,
+    diam_interno_fitting,
+    espessura_fitting,
+    L_fitting,
+    s1,
+    s1_offset_list,
+    set_fitting,
+    my_bar,
+    num_cols,
+    num_rows,
+    pitch_h_,
+    pitch_v_,
+    length_
+):  #   CONEXÕES DE ENTRADA E SAÍDA (FITTINGS)
+    if not set_fitting:
+        return modelo_final2
+
+    diam_externo_fitting = diam_interno_fitting + espessura_fitting * 2
+
+    sketch_tubo = (
+        cq.Sketch()
+        .circle(diam_externo_fitting)
+        .circle(diam_interno_fitting, mode="s")
+        .reset()
+    )
+
+    sketch_tubo_interno = (
+        cq.Sketch()
+        .circle(diam_interno_fitting)
+        .reset()
+    )
+
+    if inter_tubos == 'Curvas':
+        wp = cq.Workplane("XY")
+
+        conexao_tubo_externa = wp.placeSketch(s1, sketch_tubo.moved(z=L_fitting)).loft(combine=True)
+
+        conexao_tubo = conexao_tubo_externa + wp.placeSketch(
+            sketch_tubo.moved(z=L_fitting)).extrude(L_fitting)
+
+        try:
+            conexao_tubo_interna = wp.placeSketch(sketch_tubo_interno.moved(z=L_fitting), s1_offset_list).loft(
+                combine=True)
+
+            conexao_tubo = conexao_tubo - conexao_tubo_interna
+        except:
+            pass
+
+        conexao_tubo_rot = conexao_tubo.rotate((0, 0, 0), (1, 0, 0), 180)
+
+        modelo_final3 = modelo_final2
+
+        for i in range(num_cols):
+            if i == 0:
+                translacao_pipeline1 = cq.Vector(pitch_h_ * i, 0, length_)
+                conexao_tubo1 = conexao_tubo.translate(translacao_pipeline1)
+                modelo_final3 = modelo_final3 + conexao_tubo1
+
+            elif i == num_cols - 1 and i % 2 != 0:
+                translacao_pipeline2 = cq.Vector(pitch_h_ * i, pitch_v_, length_)
+                conexao_tubo2 = conexao_tubo.translate(translacao_pipeline2)
+                modelo_final3 = modelo_final3 + conexao_tubo2
+
+            elif i == num_cols - 1 and i % 2 == 0:
+                translacao_pipeline2 = cq.Vector(pitch_h_ * i, (pitch_v_ * (num_rows - 1)) * 2, 0)
+                conexao_tubo2 = conexao_tubo_rot.rotate((0, 0, 0), (1, 0, 0), 180).translate(translacao_pipeline2)
+                modelo_final3 = modelo_final3 + conexao_tubo2
+
+        return modelo_final3
+    else:
+        return modelo_final2
+
 
 ############################################################
 
@@ -262,29 +566,39 @@ col1, col2 = st.columns([1, 2])
 
 #SETUP
 
-if 'active_page' not in st.session_state:
-    st.session_state.active_page = '1_Home'
+if 'active_page_2' not in st.session_state:
+
+    st.session_state.active_page_2 = '2_Tubos_com_Conexoes'
+    st.session_state.st_suavizar = True
+    st.session_state.st_suavizacao = 0.0005
+
+    #if 'active_page' not in st.session_state:
 
     st.session_state.st_coordinates_x = []
     st.session_state.st_coordinates_y = []
     st.session_state.st_coordinates = []
     st.session_state.st_upload_coordinates = False
 
-    st.session_state.st_chord = 7.
-    st.session_state.st_h_c = 0.12
-    st.session_state.st_p_v_h = 6.5
+    st.session_state.st_chord = 15.
+    st.session_state.st_h_c = 0.25
+    st.session_state.st_p_v_h = 2.
     st.session_state.st_p_h_c = 2.5
-    st.session_state.st_num_rows = 7
-    st.session_state.st_num_cols = 5
+    st.session_state.st_num_rows = 5
+    st.session_state.st_num_cols = 4
     st.session_state.st_length = 100.
-
-    st.session_state.st_set_scale = False
-    st.session_state.st_scale = 2.
+    st.session_state.st_espessura_offset = 1.
 
     st.session_state.extrude_button = False
 
     st.session_state.st_sketch = None
     st.session_state.st_solid = None
+
+    st.session_state.st_set_scale = False
+    st.session_state.st_scale = 1.
+
+    st.session_state.st_diam_interno_fitting = 6.35
+    st.session_state.st_espessura_fitting = 1.
+    st.session_state.st_L_fitting = 20.
 
 
 col1.subheader('Extrusão de Contorno'
@@ -329,25 +643,68 @@ length = col1.number_input("Comprimento de tubos",format='%f',step=1.,min_value=
 
 ## Offset
 
-offset_ = col1.toggle("Opcional: Criar uma espessura no modelo.", help='Criar volume oco -> Ativar esta opção.'
+offset_ = col1.toggle("Opcional: Criar uma espessura no modelo.", help='Ative para criar volume oco. Observação: as medidas selecionadas anteriormente valerão para o perfil externo.'
                                           , value=True)
+if not offset_:
+    espessura_offset = st.session_state['st_espessura_offset']
+else:
+    espessura_offset = col1.number_input("Espessura do perfil",format='%f',step=0.5,min_value=0.01,key='st_espessura_offset', help='Espessura do perfil do modelo.')
 
 ##
 
 
 ## Set Scale Input
 
-set_scale = col1.toggle("Opcional: Escalar", help='Essa opção permite escalar o modelo gerado proporcionalmente em x,y,z.'
+set_scale = col1.toggle("Opcional: Escalar (não interfere na espessura)", help='Essa opção permite escalar o modelo gerado proporcionalmente em x,y,z.'
                                           , value=False)
 
 if not set_scale:
     set_scale = st.session_state['st_set_scale']
-    scale = st.session_state['st_scale']
+    scale = 1
 else:
     scale = col1.number_input("Escala",format='%f',step=0.5,min_value=0.01,key='st_scale')
 
 ##
 
+## Selecting HX Tube Connections
+
+inter_tubos = col1.selectbox(
+    "Tipo de conexão entre tubos",
+    ("N/A", "Curvas", "Cabeçote"), index=0, help='Selecione como os tubos devem ser conectados uns aos outros'
+)
+
+##
+
+## Set Smooth Input
+
+with st.expander("Suavização"):
+
+    suavizar = col1.toggle("Opcional: Suavizar", help='Essa opção permite suavizar ligeiramente a curva do perfil e acelerar a geração da geometria.'
+                                              , value=True)
+
+    if not suavizar:
+        suavizar = st.session_state['st_suavizar']
+        suavizacao = st.session_state['st_suavizacao']
+    else:
+        suavizacao = col1.number_input("Suavização",format='%f',step=0.0005,max_value=0.001,key='st_suavizacao')
+
+##
+
+## Fittings Entrada e Saída
+
+set_fitting = col1.toggle("Opcional: Inserir Fitting", help='Essa opção permite inserir uma tubulação circular na entrada e na saída do trocador.'
+                                          , value=False)
+
+if not set_fitting:
+    diam_interno_fitting = st.session_state['st_diam_interno_fitting']
+    espessura_fitting = st.session_state['st_espessura_fitting']
+    L_fitting = st.session_state['st_L_fitting']
+else:
+    diam_interno_fitting = col1.number_input("Diâmetro Interno Fitting", format='%f', step=1., key='st_diam_interno_fitting')
+    espessura_fitting = col1.number_input("Espessura Fitting", format='%f', step=1., key='st_espessura_fitting')
+    L_fitting = col1.number_input("Comprimento Fitting", format='%f', step=1., key='st_L_fitting')
+
+##
 
 ## Sketch Preview
 
@@ -390,10 +747,13 @@ if st.session_state.extrude_button:
     with st.spinner('Carregando...'):
 
         try:
+            my_bar = st.progress(0, text='Tubulações')
 
             ################# RUNNING #################
 
             coordinates = [(round(float(df__coord_input['x'][i]), 8), round(float(df__coord_input['y'][i]), 8)) for i in range(len(df__coord_input['x']))]
+
+            coordinates = suavizar_contorno(coordinates, suavizar, suavizacao)
 
             pontos = scale_xy_airfoil(coordinates, h_c, chord)
 
@@ -404,6 +764,9 @@ if st.session_state.extrude_button:
 
             result = None
             modelo_combinado = None
+
+            sketch_list = []  # **
+            sketch_offset_list = []
 
             for contour in contour_coordinates_:
 
@@ -417,49 +780,171 @@ if st.session_state.extrude_button:
                     for i in range(len(contour) - 1):
                         sketch1 = sketch1.segment(contour[i], contour[i + 1])
 
-                    sketch1 = sketch1.close().assemble(tag="face").reset()
+                    sketch1 = sketch1.close().assemble(
+                        tag="face").reset()  # * RESET Limpa o estado interno do esboço, mantendo apenas o resultado final (a face)
 
                     if offset_ is True:
-                        sketch1_offset = sketch1.copy().wires().offset(-(espessura_h * 0.1), mode='r').reset()
+                        try:
+                            sketch1_offset = sketch1.copy().wires().offset(-(espessura_offset / scale),
+                                                                           mode='r').reset()  # * * RESET Limpa o estado interno do esboço, mantendo apenas o resultado final (a face)
+                        except:
+                            sketch1_offset = sketch1.copy().wires().offset(-(espessura_h * 0.1),
+                                                                           mode='r').reset()  # * * RESET Limpa o estado interno do esboço, mantendo apenas o resultado final (a face)
+                            print(f'Espessura do perfil modificada para:{espessura_h * 0.1}')
+
+                        sketch_offset_list.append(sketch1_offset)  # testing
+
+                    sketch_list.append(sketch1 - sketch1_offset if offset_ is True else sketch1)  # testing
 
                     try:
-                        result = result + sketch1 - sketch1_offset if offset_ is True else result + sketch1
+                        result = result + sketch1
+                        if offset_ is True:
+                            result_ = result_ + sketch1_offset  # *
                     except:
-                        result = sketch1 - sketch1_offset if offset_ is True else sketch1
+                        result = sketch1
+                        if offset_ is True:
+                            result_ = sketch1_offset  # *
 
                 except:
-                    col2.error("Erro ao gerar contorno do modelo.")
+                    print("Error generating contour sketch")
                     continue
+
+            if offset_ is True:
+                result = result - result_
 
             if set_scale is True:
                 try:
                     result = result.val().scale(scale)
                 except:
-                    col2.error("Erro ao escalar modelo.")
+                    print("Error during scaling")
                     length = length / scale
-                    # pass
+                # pass
 
             ## Exportar o modelo como STL
             exporters.export(result, 'sketch_hxairfoils.stl')
 
-            ## 3D
+            # 3D
+
+            ##   SCALE
+
+            ### Pegar os sketches de referência
+            s1 = sketch_list[0]
+            try:
+                s1_offset_list = sketch_offset_list[0]
+            except:
+                pass
+
+            ### Copiar os valores iniciais de pitch
+            pitch_v_ = pitch_v
+            pitch_h_ = pitch_h
+            chord_ = chord
+            length_ = length
+
+            if set_scale:
+                try:
+                    s1 = s1.val().scale(scale)
+                    s1_offset_list = s1_offset_list.val().scale(scale) if offset_ else 0
+                    pitch_v_ = pitch_v_ * scale
+                    pitch_h_ = pitch_h_ * scale
+                    chord_ = chord_ * scale
+                    length_ = length * scale
+                except Exception as e:
+                    st.error(f"Scaling error: {e}")
 
             try:
                 sketch = cq.Workplane("XY").placeSketch(result)
 
-                modelo_combinado = sketch.extrude(length * scale if set_scale is True else length)
+                modelo_combinado = sketch.extrude(length_)
+
+                tube_profile = cq.Workplane("XY").placeSketch(s1).extrude(length_)
+                exporters.export(tube_profile, 'hx_profile.stl')
 
             except:
                 col2.error("Erro ao gerar modelo 3D.")
 
-            ### Exportar como STL
-            exporters.export(modelo_combinado, 'solid_hxairfoils.stl')
+
+            ################# CONEXÕES #################
+
+            ################# CURVAS
+
+            if inter_tubos == 'Curvas':
+                my_bar.progress(50, text='Conexões entre linhas')
+
+                #   CONEXÕES ENTRE LINHAS
+
+                modelo_final = adicionar_conexoes_entre_linhas(
+                    modelo_combinado=modelo_combinado,
+                    s1=s1,
+                    pitch_h_=pitch_h_,
+                    pitch_v_=pitch_v_,
+                    length_=length_,
+                    num_cols=num_cols,
+                    num_rows=num_rows,
+                    set_scale=set_scale,
+                    my_bar=my_bar
+                )
+
+                #   CONEXÕES ENTRE COLUNAS
+
+                my_bar.progress(70, text='Conexões entre colunas')
+
+                modelo_final2 = adicionar_conexoes_entre_colunas(
+                    modelo_final,
+                    s1,
+                    pitch_h_,
+                    pitch_v_,
+                    chord_,
+                    num_cols,
+                    num_rows,
+                    length_,
+                    my_bar
+                )
+
+
+                #   CONEXÕES DE ENTRADA E SAÍDA (FITTINGS)
+
+                if set_fitting:
+                    my_bar.progress(85, text='Adicionando conexões de entrada e saída')
+
+                modelo_final2 = adicionar_fittings(
+                    modelo_final2,
+                    diam_interno_fitting,
+                    espessura_fitting,
+                    L_fitting,
+                    s1,
+                    s1_offset_list,
+                    set_fitting,
+                    my_bar,
+                    num_cols,
+                    num_rows,
+                    pitch_h_,
+                    pitch_v_,
+                    length_
+                )
+
+
+            ################# CABEÇOTE
+
+            elif inter_tubos == 'Cabeçote':
+                modelo_final2 = modelo_combinado
+
+
+            ################# N/A
+
+            else:
+                modelo_final2 = modelo_combinado
+
 
             ############################### RESULTS
 
+            exporters.export(modelo_final2, 'hx_final.stl')
+            exporters.export(modelo_final2, 'hx_final.step')
+
+            my_bar.progress(90, text='Display')
+
             try:
                 stl_from_file(
-                    file_path='solid_hxairfoils.stl',
+                    file_path='hx_final.stl',
                     material='material',
                     auto_rotate=False,
                     opacity=1,
@@ -470,10 +955,13 @@ if st.session_state.extrude_button:
                 )
                 st.success("Modelo gerado com sucesso.")
                 st.session_state.st_sketch = result
-                st.session_state.st_solid = modelo_combinado
+                st.session_state.st_solid = modelo_final2
 
             except:
                 pass
+
+            my_bar.progress(95, text='Arquivos .STL')
+
 
             ############################### DOWNLOAD
 
@@ -482,10 +970,13 @@ if st.session_state.extrude_button:
 
             col21, col22 = col2.columns([1, 1])
 
-            solid_name = 'solid_hxairfoils.stl'
+            solid_name = 'hx_final'
             sketch_name = 'sketch_hxairfoils.stl'
+            profile_name = 'hx_profile.stl'
             stl_file_sketch = str(path) + "/" + sketch_name
-            stl_file_solid = str(path) + "/" + solid_name
+            stl_file_solid = str(path) + "/" + solid_name + '.stl'
+            step_file_solid = str(path) + "/" + solid_name + '.step'
+            stl_file_profile = str(path) + "/" + profile_name
 
             # Create a download button for STL
             ## Sketch
@@ -501,13 +992,38 @@ if st.session_state.extrude_button:
             col22.download_button(
                 label="Solid .stl",
                 data=open(stl_file_solid, "rb").read(),
-                file_name=solid_name,
+                file_name=solid_name + '.stl',
                 mime="application/stl",
                 on_click=manter_extrude_button_ativo,
                 use_container_width=True
             )
 
+            col2.download_button(
+                label="Solid .step",
+                data=open(step_file_solid, "rb").read(),
+                file_name=solid_name + '.step',
+                mime="application/step",
+                on_click=manter_extrude_button_ativo,
+                use_container_width=True
+            )
+
+            col2.download_button(
+                label="Tube Profile (Solid) .stl",
+                data=open(stl_file_profile, "rb").read(),
+                file_name=profile_name,
+                mime="application/stl",
+                on_click=manter_extrude_button_ativo,
+                use_container_width=True
+            )
+
+            my_bar.progress(100, text='Carregando')
+
+            time.sleep(1)
+            my_bar.empty()
+
         except Exception as e:
             st.error(f"Erro ao gerar modelo: {e}")
 else:
   col2.markdown("")
+
+  #https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
