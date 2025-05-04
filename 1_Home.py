@@ -193,6 +193,27 @@ def process_coord_files(file, file_name):
     return df
 
 
+def centralizar_pontos_na_origem(pontos):
+    if not pontos:
+        return []
+
+    # Separando as coordenadas X e Y
+    x_coords, y_coords = zip(*pontos)
+
+    # Calculando os valores máximos e mínimos
+    x_min, x_max = min(x_coords), max(x_coords)
+    y_min, y_max = min(y_coords), max(y_coords)
+
+    # Calculando os centros baseados nas distâncias máximas
+    x_centro = (x_max + x_min) / 2
+    y_centro = (y_max + y_min) / 2
+
+    # Centralizando os pontos subtraindo o centro calculado
+    pontos_centralizados = [(x - x_centro, y - y_centro) for x, y in pontos]
+
+    return pontos_centralizados
+
+
 @st.dialog("Uploading a Coordinates File")
 def show_uploading_instructions():
     st.markdown("""
@@ -366,8 +387,8 @@ def adicionar_conexoes_entre_colunas(
         .consolidateWires()
         .revolve(
             angleDegrees=180,
-            axisStart=(r_curva + chord_, 0, 0),  # eixo em X = r_curva + chord_
-            axisEnd=(r_curva + chord_, 1, 0),  # variação em Y
+            axisStart=(r_curva + chord_/2, 0, 0),  # eixo em X = r_curva + chord_
+            axisEnd=(r_curva + chord_/2, 1, 0),  # variação em Y
             combine=True
         )
         .rotate((0, 0, 0), (1, 0, 0), 90)
@@ -394,8 +415,8 @@ def adicionar_conexoes_entre_colunas(
         .consolidateWires()
         .revolve(
             angleDegrees=180,
-            axisStart=(-r_curva, 1, 0),  # eixo em X = -r_curva
-            axisEnd=(-r_curva, 0, 0),  # variação em Y
+            axisStart=(-r_curva-chord_/2, 1, 0),  # eixo em X = -r_curva
+            axisEnd=(-r_curva-chord_/2, 0, 0),  # variação em Y
             combine=True
         )
         .rotate((0, 0, 0), (1, 0, 0), -90)
@@ -483,6 +504,133 @@ def adicionar_conexoes_entre_colunas(
 
     return modelo_final2
 
+def criar_header_hx(
+    conectype,
+    pitch_h_,
+    pitch_v_,
+    num_cols,
+    num_rows,
+    espessura_offset,
+    espessura_h_,
+    chord_,
+    offset_,
+    sketch_ext_list,
+    scale,
+    set_scale,
+    L_header,
+    set_fitting,
+    diam_interno_fitting,
+    espessura_fitting,
+    L_fitting,
+    modelo_combinado,
+    length_
+):
+
+    # Cálculo das dimensões da base inferior do cabeçote
+    L_cab_b = pitch_h_ * num_cols * 1.1
+    H_cab_b = pitch_v_ * num_rows * 2.5
+    S_cab_b = espessura_offset * 1.5
+
+    if offset_ is True:
+        # Cria a base inferior do cabeçote com arredondamento nos cantos verticais
+        cab_baixo = (
+            cq.Workplane("XY")
+            .box(L_cab_b, H_cab_b, S_cab_b)
+            .edges("|Z").fillet(chord_/2)
+        ).translate((pitch_h_ * num_cols / 2 - chord_, pitch_v_ * num_rows - espessura_h_, S_cab_b / 2))
+
+        # Subtrai os perfis (furos) do cabeçote
+        for profile in sketch_ext_list:
+            s1_header = profile
+            s1_header = s1_header.val().scale(scale) if set_scale else s1_header
+
+            header_hole = (
+                cq.Workplane("XY")
+                .placeSketch(s1_header)
+                .consolidateWires()
+                .extrude(S_cab_b)
+            )
+
+            cab_baixo = cab_baixo - header_hole
+    else:
+        # Cria a base inferior do cabeçote sem furos
+        cab_baixo = (
+            cq.Workplane("XY")
+            .box(L_cab_b, H_cab_b, S_cab_b)
+            .edges("|Z").fillet(chord_/2)
+        ).translate((pitch_h_ * num_cols / 2 - chord_, pitch_v_ * num_rows - espessura_h_, S_cab_b / 2))
+
+    # Cria o corpo superior do cabeçote
+    header_body = (
+        cq.Workplane("XY")
+        .box(L_cab_b, H_cab_b, L_header)
+    ).translate((pitch_h_ * num_cols / 2 - chord_, pitch_v_ * num_rows - espessura_h_, -L_header / 2))
+
+    ## Se offset_ for True, aplica shell interno antes do fillet
+    header_body = header_body.faces("+Z").shell(-espessura_offset * 2).edges("|Z").fillet(chord_/2) if offset_ else header_body.edges("|Z").fillet(chord_/2)
+
+    ## Junta base inferior ao corpo do cabeçote
+    header_body = header_body + cab_baixo
+
+    ## Pega o centro da bounding box do cabeçote
+    center_header = header_body.val().BoundingBox().center  # .BoundingBox() retorna a caixa delimitadora de um objeto, o menor paralelepípedo retangular alinhado aos eixos que envolve completamente o sólido
+
+    # Cria corpo inferior do cabeçote (espelhado)
+    header_body2 = (
+        cq.Workplane("XY")
+        .box(L_cab_b, H_cab_b, L_header)
+    ).translate((pitch_h_ * num_cols / 2 - chord_, pitch_v_ * num_rows - espessura_h_, L_header / 2))
+
+    ## Aplica shell se necessário
+    header_body2 = header_body2.faces("-Z").shell(-espessura_offset * 2).edges("|Z").fillet(chord_/2) if offset_ else header_body2.edges("|Z").fillet(chord_/2)
+
+    ## Junta base inferior
+    header_body2 = header_body2 + cab_baixo
+
+    ## Pega o centro da bounding box do segundo cabeçote
+    center_header2 = header_body2.val().BoundingBox().center
+
+    if set_fitting is True:
+        # Cálculo do diâmetro externo do tubo
+        diam_externo_fitting = diam_interno_fitting + espessura_fitting * 2
+
+        # Cria sketch do tubo com espessura (anular)
+        sketch_tubo = (
+            cq.Sketch()
+            .circle(diam_externo_fitting/2)
+            .circle(diam_interno_fitting/2, mode="s")
+            .reset()
+        )
+
+        # Sketch interno para corte
+        sketch_tubo_interno = (
+            cq.Sketch()
+            .circle(diam_interno_fitting/2)
+            .reset()
+        )
+
+        wp = cq.Workplane("XY")
+
+        # Cria tubos e rota para ficar perpendicular ao cabeçote
+        conexao_tubo_externa = wp.placeSketch(sketch_tubo).extrude(L_fitting).rotate((0, 0, 0), (0, 1, 0), 90)
+        cut_conexao_tubo_externa = wp.placeSketch(sketch_tubo_interno).extrude(L_fitting).rotate((0, 0, 0), (0, 1, 0), 90)
+
+        # Adiciona tubo ao primeiro cabeçote e subtrai interno
+        header_body = header_body + conexao_tubo_externa.translate((center_header.x + L_cab_b / 2 - espessura_offset * 2, center_header.y, center_header.z)) \
+                                    - cut_conexao_tubo_externa.translate((center_header.x + L_cab_b / 2 - espessura_offset * 2, center_header.y, center_header.z))
+
+        # Adiciona tubo ao segundo cabeçote e subtrai interno
+        header_body2 = header_body2 + conexao_tubo_externa.translate((center_header2.x - L_cab_b / 2 + espessura_offset * 2 - L_fitting, center_header2.y, center_header2.z)) \
+                                      - cut_conexao_tubo_externa.translate((center_header2.x - L_cab_b / 2 + espessura_offset * 2 - L_fitting, center_header2.y, center_header2.z))
+
+    # Junta os dois cabeçotes e o modelo central
+    modelo_final2 = header_body + modelo_combinado + header_body2.translate((0, 0, length_ - S_cab_b))
+
+    # Exporta arquivos STL e STEP
+    exporters.export(header_body, "header_body.step")
+
+    return modelo_final2
+
 def adicionar_fittings(
     modelo_final2,
     diam_interno_fitting,
@@ -505,18 +653,18 @@ def adicionar_fittings(
 
     sketch_tubo = (
         cq.Sketch()
-        .circle(diam_externo_fitting)
-        .circle(diam_interno_fitting, mode="s")
+        .circle(diam_externo_fitting/2)
+        .circle(diam_interno_fitting/2, mode="s")
         .reset()
     )
 
     sketch_tubo_interno = (
         cq.Sketch()
-        .circle(diam_interno_fitting)
+        .circle(diam_interno_fitting/2)
         .reset()
     )
 
-    if inter_tubos == 'Curvas':
+    if conectype == 'Curvas':
         wp = cq.Workplane("XY")
 
         conexao_tubo_externa = wp.placeSketch(s1, sketch_tubo.moved(z=L_fitting)).loft(combine=True)
@@ -585,8 +733,9 @@ if 'active_page_2' not in st.session_state:
     st.session_state.st_p_h_c = 2.5
     st.session_state.st_num_rows = 5
     st.session_state.st_num_cols = 4
-    st.session_state.st_length = 100.
+    st.session_state.st_length = 200.
     st.session_state.st_espessura_offset = 1.
+    st.session_state.st_L_header = 10.
 
     st.session_state.extrude_button = False
 
@@ -668,10 +817,15 @@ else:
 
 ## Selecting HX Tube Connections
 
-inter_tubos = col1.selectbox(
+conectype = col1.selectbox(
     "Tipo de conexão entre tubos",
     ("N/A", "Curvas", "Cabeçote"), index=0, help='Selecione como os tubos devem ser conectados uns aos outros'
 )
+
+if conectype != 'Cabeçote':
+    L_header = st.session_state['st_L_header']
+else:
+    L_header = col1.number_input("Comprimento do Cabeçote", format='%f', step=1., key='st_L_header', help='Deve ser maior que o diâmetro de fitting, se esse existir.')
 
 ##
 
@@ -716,6 +870,8 @@ if preview_button:
         coordinates = [(round(float(df__coord_input['x'][i]), 8), round(float(df__coord_input['y'][i]), 8)) for i in
                        range(len(df__coord_input['x']))]
 
+        coordinates = centralizar_pontos_na_origem(coordinates)
+
         pontos = scale_xy_airfoil(coordinates, h_c, chord)
 
         contours, espessura_h, pitch_v, pitch_h = calcular_coordenadas_aerofolios(pontos, num_rows, num_cols, chord,
@@ -753,6 +909,8 @@ if st.session_state.extrude_button:
 
             coordinates = [(round(float(df__coord_input['x'][i]), 8), round(float(df__coord_input['y'][i]), 8)) for i in range(len(df__coord_input['x']))]
 
+            coordinates = centralizar_pontos_na_origem(coordinates) #*
+
             coordinates = suavizar_contorno(coordinates, suavizar, suavizacao)
 
             pontos = scale_xy_airfoil(coordinates, h_c, chord)
@@ -765,8 +923,9 @@ if st.session_state.extrude_button:
             result = None
             modelo_combinado = None
 
-            sketch_list = []  # **
-            sketch_offset_list = []
+            sketch_list = []
+            sketch_offset_list = []  #internal
+            sketch_ext_list  = []   #external
 
             for contour in contour_coordinates_:
 
@@ -783,10 +942,14 @@ if st.session_state.extrude_button:
                     sketch1 = sketch1.close().assemble(
                         tag="face").reset()  # * RESET Limpa o estado interno do esboço, mantendo apenas o resultado final (a face)
 
+                    sketch_ext_list.append(sketch1)
+
                     if offset_ is True:
                         try:
                             sketch1_offset = sketch1.copy().wires().offset(-(espessura_offset / scale),
-                                                                           mode='r').reset()  # * * RESET Limpa o estado interno do esboço, mantendo apenas o resultado final (a face)
+                                                                           mode='r').reset() if set_scale else sketch1.copy().wires().offset(
+                                -(espessura_offset),
+                                mode='r').reset()  # * * RESET Limpa o estado interno do esboço, mantendo apenas o resultado final (a face)
                         except:
                             sketch1_offset = sketch1.copy().wires().offset(-(espessura_h * 0.1),
                                                                            mode='r').reset()  # * * RESET Limpa o estado interno do esboço, mantendo apenas o resultado final (a face)
@@ -814,14 +977,12 @@ if st.session_state.extrude_button:
 
             if set_scale is True:
                 try:
-                    result = result.val().scale(scale)
+                    result = result.val().scale(scale)  # .translate(((-chord/2)*scale, 0, 0))
                 except:
                     print("Error during scaling")
                     length = length / scale
-                # pass
+                    # pass
 
-            ## Exportar o modelo como STL
-            exporters.export(result, 'sketch_hxairfoils.stl')
 
             # 3D
 
@@ -838,6 +999,7 @@ if st.session_state.extrude_button:
             pitch_v_ = pitch_v
             pitch_h_ = pitch_h
             chord_ = chord
+            espessura_h_ = espessura_h
             length_ = length
 
             if set_scale:
@@ -847,11 +1009,16 @@ if st.session_state.extrude_button:
                     pitch_v_ = pitch_v_ * scale
                     pitch_h_ = pitch_h_ * scale
                     chord_ = chord_ * scale
+                    espessura_h_ = espessura_h_ * scale
                     length_ = length * scale
                 except Exception as e:
                     st.error(f"Scaling error: {e}")
 
             try:
+                ## Exportar o modelo como STL
+
+                exporters.export(result, 'sketch_hxairfoils.stl')
+
                 sketch = cq.Workplane("XY").placeSketch(result)
 
                 modelo_combinado = sketch.extrude(length_)
@@ -867,7 +1034,7 @@ if st.session_state.extrude_button:
 
             ################# CURVAS
 
-            if inter_tubos == 'Curvas':
+            if conectype == 'Curvas':
                 my_bar.progress(50, text='Conexões entre linhas')
 
                 #   CONEXÕES ENTRE LINHAS
@@ -925,9 +1092,30 @@ if st.session_state.extrude_button:
 
             ################# CABEÇOTE
 
-            elif inter_tubos == 'Cabeçote':
-                modelo_final2 = modelo_combinado
+            elif conectype == 'Cabeçote':
+                my_bar.progress(50, text='Criando Headers')
 
+                modelo_final2 = criar_header_hx(
+                    conectype,
+                    pitch_h_,
+                    pitch_v_,
+                    num_cols,
+                    num_rows,
+                    espessura_offset,
+                    espessura_h_,
+                    chord_,
+                    offset_,
+                    sketch_ext_list,
+                    scale,
+                    set_scale,
+                    L_header,
+                    set_fitting,
+                    diam_interno_fitting,
+                    espessura_fitting,
+                    L_fitting,
+                    modelo_combinado,
+                    length_
+                )
 
             ################# N/A
 
@@ -1006,6 +1194,17 @@ if st.session_state.extrude_button:
                 on_click=manter_extrude_button_ativo,
                 use_container_width=True
             )
+
+            if conectype == 'Cabeçote':
+                step_file_header = str(path) + "/" + 'header_body' + '.step'
+                col2.download_button(
+                    label="Header (Solid) .step",
+                    data=open(step_file_header, "rb").read(),
+                    file_name='header_body' + '.step',
+                    mime="application/step",
+                    on_click=manter_extrude_button_ativo,
+                    use_container_width=True
+                )
 
             col2.download_button(
                 label="Tube Profile (Solid) .stl",
