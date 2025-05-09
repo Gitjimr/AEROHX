@@ -214,6 +214,38 @@ def centralizar_pontos_na_origem(pontos):
     return pontos_centralizados
 
 
+def detectar_simetria(pontos):
+    pontos_set = set(pontos)
+
+    simetria_x = True
+    simetria_y = True
+
+    for x, y in pontos:
+        if (x, -y) not in pontos_set:
+            simetria_x = False
+        if (-x, y) not in pontos_set:
+            simetria_y = False
+
+    return {
+        'x': simetria_x,
+        'y': simetria_y
+    }
+
+
+def raio_eq_poligono(pontos): # Para modificar perfil assimétrico nas curvas
+    n = len(pontos)
+    area = 0
+    for i in range(n):
+        x1, y1 = pontos[i]
+        x2, y2 = pontos[(i + 1) % n]
+        area += (x1 * y2) - (x2 * y1)
+
+    area = abs(area) / 2
+    raio_circ = (area / math.pi) ** 0.5
+
+    return raio_circ
+
+
 @st.dialog("Uploading a Coordinates File")
 def show_uploading_instructions():
     st.markdown("""
@@ -294,7 +326,7 @@ def suavizar_contorno(coordinates, suavizar, suavizacao):
 
     return coordinates
 
-def adicionar_conexoes_entre_linhas(
+def hx_lin(
     modelo_combinado,
     s1,
     pitch_h_,
@@ -303,30 +335,100 @@ def adicionar_conexoes_entre_linhas(
     num_cols,
     num_rows,
     set_scale,
-    my_bar
-): #   CONEXÕES ENTRE LINHAS
+    simetry,
+    staggered = True
+):
+    if simetry['x']:
+      #   CONEXÕES ENTRE LINHAS (PERFIL SIMÉTRICO)
 
-    result_cima = (
-        cq.Workplane("XY")
-        .placeSketch(s1)
-        .revolve(
-            angleDegrees=180,
-            axisStart=(1, pitch_v_, 0),  # mesmo X e Z
-            axisEnd=(0, pitch_v_, 0)  # variação apenas em Y
-        )
-    )
+      result_cima = (
+          cq.Workplane("XY")
+          .placeSketch(s1)
+          .revolve(
+              angleDegrees=180,
+              axisStart=(1, pitch_v_, 0),  # mesmo X e Z
+              axisEnd=(0, pitch_v_, 0)  # variação apenas em Y
+          )
+      )
 
-    #exporters.export(result_cima, "revolve_cima.stl")
+      #exporters.export(result_cima, "revolve_cima.stl")
 
-    result_baixo = (
-        cq.Workplane("XY")
-        .placeSketch(s1)
-        .revolve(
-            angleDegrees=180,
-            axisStart=(0, pitch_v_, 0),  # mesmo X e Z
-            axisEnd=(1, pitch_v_, 0)  # variação apenas em Y
-        )
-    )
+      result_baixo = (
+          cq.Workplane("XY")
+          .placeSketch(s1)
+          .revolve(
+              angleDegrees=180,
+              axisStart=(0, pitch_v_, 0),  # mesmo X e Z
+              axisEnd=(1, pitch_v_, 0)  # variação apenas em Y
+          )
+      )
+
+    else:
+      # Fittings
+      r_circ_loft = raio_eq_poligono(pontos) * scale if set_scale else raio_eq_poligono(pontos)
+
+      L_curva_col = 3 * r_circ_loft
+
+      sketch_tubo_curva_col = (
+          cq.Sketch()
+          .circle(r_circ_loft)
+          .circle(r_circ_loft - espessura_offset, mode="s")
+          .reset()
+      )
+
+      sketch_tubo_interno_curva_col = (
+          cq.Sketch()
+          .circle(r_circ_loft - espessura_offset)
+          .reset()
+      )
+
+      ## Fitting cima
+      curva_col = cq.Workplane("XY").placeSketch(s1, sketch_tubo_curva_col.moved(z=L_curva_col)).loft(combine=True)
+
+      if offset_:
+          curva_col_int = cq.Workplane("XY").placeSketch(s1_offset_list, sketch_tubo_interno_curva_col.moved(z=L_curva_col)).loft(combine=True)
+          curva_col_cima = curva_col - curva_col_int
+      else:
+          curva_col_cima = curva_col
+
+      ## Fitting baixo
+      curva_col = cq.Workplane("XY").placeSketch(s1, sketch_tubo_curva_col.moved(z=-L_curva_col)).loft(combine=True)
+
+      if offset_:
+          curva_col_int = cq.Workplane("XY").placeSketch(s1_offset_list, sketch_tubo_interno_curva_col.moved(z=-L_curva_col)).loft(combine=True)
+          curva_col_baixo = curva_col - curva_col_int
+      else:
+          curva_col_baixo = curva_col
+
+      ## Curva cima
+      result_cima = (
+          cq.Workplane("XY")
+          .placeSketch(sketch_tubo_curva_col)
+          .revolve(
+              angleDegrees=180,
+              axisStart=(1, pitch_v_, 0),  # mesmo X e Z
+              axisEnd=(0, pitch_v_, 0)     # variação apenas em Y
+          )
+          .translate((0, 0, L_curva_col))
+      )
+
+      result_cima = result_cima + curva_col_cima + curva_col_cima.translate((0,pitch_v_*2,0))
+
+
+      ## Curva baixo
+      result_baixo = (
+          cq.Workplane("XY")
+          .placeSketch(sketch_tubo_curva_col)
+          .revolve(
+              angleDegrees=180,
+              axisStart=(0, pitch_v_, 0),  # mesmo X e Z
+              axisEnd=(1, pitch_v_, 0)     # variação apenas em Y
+          )
+          .translate((0, 0, -L_curva_col))
+      )
+
+      result_baixo = result_baixo + curva_col_baixo + curva_col_baixo.translate((0,pitch_v_*2,0))
+
 
     #exporters.export(result_baixo, "revolve_baixo.stl")
 
@@ -334,7 +436,7 @@ def adicionar_conexoes_entre_linhas(
 
     for i in range(num_cols):
 
-        for j in range(num_rows - 1):
+        for j in range(num_rows - 1): # Aqui muda de staggered para alligned
 
             if j % 2 == 0 and i % 2 == 0:
                 add_curva = result_baixo.translate((pitch_h_ * i, pitch_v_ * 2 * j, 0))
@@ -352,130 +454,145 @@ def adicionar_conexoes_entre_linhas(
 
     return modelo_final
 
-def adicionar_conexoes_entre_colunas(
-    modelo_final,
+
+def hx_col(
+    pontos,
+    scale,
+    set_scale,
+    espessura_offset,
     s1,
+    s1_offset_list,
+    offset_,
     pitch_h_,
     pitch_v_,
-    chord_,
+    length_,
     num_cols,
     num_rows,
-    length_,
-    my_bar
-):  #   CONEXÕES ENTRE COLUNAS
+    modelo_final,
+    simetry,
+    staggered = True
+):
+    if simetry['y'] and not staggered:
 
-    r_curva = ((pitch_h_ - 2 * chord_) / 4)  # R Curva 1: r_curva + chord_ | R Curva 2: r_curva
+        # Simétrico
 
-    wp = cq.Workplane("XY")
+        # Curvas
 
-    ## 1. Subida (result_teste1)
-    result_teste1 = (
-        wp
-        .placeSketch(s1)
-        .consolidateWires()
-        .revolve(
-            angleDegrees=90,
-            axisStart=(0, -pitch_v_ / 2, 0),  # eixo com Y fixo em -pitch_v_/2
-            axisEnd=(1, -pitch_v_ / 2, 0)  # variação somente em X
+        theta_rad_curva = math.atan(pitch_v_ / pitch_h_)    # Para alternados
+
+        dist_curva = pitch_v_ / math.sin(theta_rad_curva) if staggered else pitch_h_
+
+        ## Curva cima
+        curva_col_ = (
+            cq.Workplane("XY")
+            .placeSketch(s1)
+            .revolve(
+                angleDegrees=180,
+                axisStart=(dist_curva / 2, 0, 0),  # mesmo X e Z
+                axisEnd=(dist_curva / 2, 1, 0)     # variação apenas em Y
+            )
         )
-    )
+        curva_col_ = curva_col_.rotate((0, 0, 0), (0, 0, 1), math.degrees(-theta_rad_curva)) if staggered else curva_col_
 
-    ## 2. Curva 1 (result_teste2)
-    result_teste2 = (
-        wp
-        .placeSketch(s1)
-        .consolidateWires()
-        .revolve(
-            angleDegrees=180,
-            axisStart=(r_curva + chord_/2, 0, 0),  # eixo em X = r_curva + chord_
-            axisEnd=(r_curva + chord_/2, 1, 0),  # variação em Y
-            combine=True
+        curva_col_cima = curva_col_
+
+        ## Curva baixo
+        curva_col_ = (
+            cq.Workplane("XY")
+            .placeSketch(s1)
+            .revolve(
+                angleDegrees=180,
+                axisStart=(dist_curva / 2, 1, 0),  # mesmo X e Z
+                axisEnd=(dist_curva / 2, 0, 0)     # variação apenas em Y
+            )
         )
-        .rotate((0, 0, 0), (1, 0, 0), 90)
-    )
-    translacao_curva1 = cq.Vector(0, -pitch_v_ / 2, pitch_v_ / 2)
-    result_teste2_alinhado = result_teste2.translate(translacao_curva1)
+        curva_col_ = curva_col_.rotate((0, 0, 0), (0, 0, 1), math.degrees(theta_rad_curva)) if staggered else curva_col_
 
-    ## 3. Reta (result_teste3)
-    result_teste3 = (
-        wp
-        .placeSketch(s1)
-        .consolidateWires()
-        .extrude(pitch_v_ * 2, combine=True)
-        .rotate((0, 0, 0), (0, 0, 1), 180)
-        .rotate((0, 0, 0), (1, 0, 0), 90)
-    )
-    translacao_reta = cq.Vector(2 * (r_curva + chord_), 3 * pitch_v_ / 2, pitch_v_ / 2)
-    result_teste3_alinhado = result_teste3.translate(translacao_reta)
+        curva_col_baixo = curva_col_
 
-    ## 4. Curva 2 (result_teste4)
-    result_teste4 = (
-        wp
-        .placeSketch(s1)
-        .consolidateWires()
-        .revolve(
-            angleDegrees=180,
-            axisStart=(-r_curva-chord_/2, 1, 0),  # eixo em X = -r_curva
-            axisEnd=(-r_curva-chord_/2, 0, 0),  # variação em Y
-            combine=True
+
+    else:
+
+        # Assimétrico
+
+        # Fittings
+        r_circ_loft = raio_eq_poligono(pontos) * scale if set_scale else raio_eq_poligono(pontos)
+
+        L_curva_col = 3 * r_circ_loft
+
+        sketch_tubo_curva_col = (
+            cq.Sketch()
+            .circle(r_circ_loft)
+            .circle(r_circ_loft - espessura_offset, mode="s")
+            .reset()
         )
-        .rotate((0, 0, 0), (1, 0, 0), -90)
-    )
-    translacao_curva2 = cq.Vector(4 * (r_curva) + 2 * chord_, -pitch_v_ / 2, pitch_v_ / 2)
-    translacao_curva2_ =  cq.Vector(0, pitch_v_*2, 0) #  Para casos com tub reta
-    result_teste4_alinhado = result_teste4.translate(translacao_curva2)
 
-    ## 5. Descida (result_teste5)
-    result_teste5 = (
-        wp
-        .placeSketch(s1)
-        .consolidateWires()
-        .revolve(
-            angleDegrees=90,
-            axisStart=(0, -pitch_v_ / 2, 0),  # eixo com Y fixo em -pitch_v_/2
-            axisEnd=(1, -pitch_v_ / 2, 0),  # variação somente em X
-            combine=True
+        sketch_tubo_interno_curva_col = (
+            cq.Sketch()
+            .circle(r_circ_loft - espessura_offset)
+            .reset()
         )
-        .rotate((0, 0, 0), (1, 0, 0), 90)
-    )
-    translacao_descida = cq.Vector(4 * (r_curva) + 2 * chord_, -pitch_v_ / 2, pitch_v_ / 2)
-    translacao_descida_ = cq.Vector(0, pitch_v_*2, 0)  # Para casos com tub reta
-    result_teste5_alinhado = result_teste5.translate(translacao_descida)
 
+        ## Fitting cima
+        curva_col = cq.Workplane("XY").placeSketch(s1, sketch_tubo_curva_col.moved(z=L_curva_col)).loft(combine=True)
 
-    pipeline = (
-        result_teste1
-        .union(result_teste2_alinhado)
-        .union(result_teste4_alinhado)
-        .union(result_teste5_alinhado)
-    )
-    #exporters.export(pipeline, "conexao_h.stl")
+        if offset_:
+            curva_col_int = cq.Workplane("XY").placeSketch(s1_offset_list, sketch_tubo_interno_curva_col.moved(z=L_curva_col)).loft(combine=True)
+            curva_col_cima = curva_col - curva_col_int
+        else:
+            curva_col_cima = curva_col
 
-    if num_rows % 2 == 0:
-        pipeline_ = (
-            result_teste1
-            .union(result_teste2_alinhado)
-            .union(result_teste3_alinhado)
-            .union(result_teste4_alinhado.translate(translacao_curva2_))
-            .union(result_teste5_alinhado.translate(translacao_descida_))
+        ## Fitting baixo
+        curva_col = cq.Workplane("XY").placeSketch(s1, sketch_tubo_curva_col.moved(z=-L_curva_col)).loft(combine=True)
+
+        if offset_:
+            curva_col_int = cq.Workplane("XY").placeSketch(s1_offset_list, sketch_tubo_interno_curva_col.moved(z=-L_curva_col)).loft(combine=True)
+            curva_col_baixo = curva_col - curva_col_int
+        else:
+            curva_col_baixo = curva_col
+
+        # Curvas
+
+        theta_rad_curva = math.atan(pitch_v_ / pitch_h_)    # Para alternados
+
+        dist_curva = pitch_v_ / math.sin(theta_rad_curva) if staggered else pitch_h_
+
+        ## Curva cima
+        curva_col_ = (
+            cq.Workplane("XY")
+            .placeSketch(sketch_tubo_curva_col)
+            .revolve(
+                angleDegrees=180,
+                axisStart=(dist_curva / 2, 0, 0),  # mesmo X e Z
+                axisEnd=(dist_curva / 2, 1, 0)     # variação apenas em Y
+            )
         )
-        # exporters.export(pipeline_, "conexao_h_.stl")
+        curva_col_ = curva_col_.rotate((0, 0, 0), (0, 0, 1), math.degrees(-theta_rad_curva)).translate((0, 0, L_curva_col)) if staggered else curva_col_.translate((0, 0, L_curva_col))
 
-    ## ADIÇÃO DE CONEXÕES ENTRE COLUNAS
+        curva_col_cima = curva_col_cima + curva_col_ + curva_col_cima.translate((pitch_h_, -pitch_v_, 0))
+
+        ## Curva baixo
+        curva_col_ = (
+            cq.Workplane("XY")
+            .placeSketch(sketch_tubo_curva_col)
+            .revolve(
+                angleDegrees=180,
+                axisStart=(dist_curva / 2, 1, 0),  # mesmo X e Z
+                axisEnd=(dist_curva / 2, 0, 0)     # variação apenas em Y
+            )
+        )
+        curva_col_ = curva_col_.rotate((0, 0, 0), (0, 0, 1), math.degrees(theta_rad_curva)).translate((0, 0, -L_curva_col)) if staggered else curva_col_.translate((0, 0, -L_curva_col))
+
+        curva_col_baixo = curva_col_baixo + curva_col_ + curva_col_baixo.translate((pitch_h_, pitch_v_, 0))
+
+        #exporters.export(curva_col_cima, "curva_col_cima.stl")
+        #displayCAD("/content/curva_col_cima.stl", "Sketch: sketch_TESTE.stl")
+
+        #exporters.export(curva_col_baixo, "curva_col_baixo.stl")
+        #displayCAD("/content/curva_col_baixo.stl", "Sketch: sketch_TESTE.stl")
+
 
     modelo_final2 = modelo_final
-
-    pipeline_fit_K = 1.2
-
-    pipeline_fit = (
-        wp
-        .placeSketch(s1)
-        .extrude(pitch_v_ * pipeline_fit_K)
-    )  # **
-
-    ## Pré-computa as rotações que são constantes
-    base_pipeline = pipeline.rotate((0, 0, 0), (1, 0, 0), 180)
-    base_pipeline_fit = pipeline_fit.rotate((0, 0, 0), (1, 0, 0), 180)
 
     for i in range(num_cols - 1):
         if i % 2 == 0:
@@ -483,29 +600,23 @@ def adicionar_conexoes_entre_colunas(
             translacao_pipeline1 = cq.Vector(pitch_h_ * i, (pitch_v_ * (num_rows - 1)) * 2, 0)
 
             ## Use o objeto já rotacionado e apenas aplique a translação diferente
-            pipeline1 = base_pipeline.translate(translacao_pipeline1 + cq.Vector(0, 0, -pitch_v_*pipeline_fit_K))
-            pipeline1_fit1 = base_pipeline_fit.translate(translacao_pipeline1)
-            pipeline1_fit2 = base_pipeline_fit.translate(
-                translacao_pipeline1 + cq.Vector(pitch_h_, pitch_v_, 0))
+            pipeline1 = curva_col_baixo.translate(translacao_pipeline1)
 
-            modelo_final2 = modelo_final2 + pipeline1 + pipeline1_fit1 + pipeline1_fit2
+            modelo_final2 = modelo_final2 + pipeline1
 
         else:
             ## Translação para o ramo sem rotação
             translacao_pipeline2 = cq.Vector(pitch_h_ * i, pitch_v_, length_)
 
-            pipeline2 = pipeline.translate(translacao_pipeline2 + cq.Vector(0, 0, pitch_v_*pipeline_fit_K))
-            pipeline2_fit1 = pipeline_fit.translate(translacao_pipeline2)
-            pipeline2_fit2 = pipeline_fit.translate(translacao_pipeline2 + cq.Vector(pitch_h_, -pitch_v_, 0))
+            pipeline2 = curva_col_cima.translate(translacao_pipeline2)
 
-            modelo_final2 = modelo_final2 + pipeline2 + pipeline2_fit1 + pipeline2_fit2
-
-    #exporters.export(modelo_final2, 'hx_final.stl')
+            modelo_final2 = modelo_final2 + pipeline2
 
     return modelo_final2
 
+
 def criar_header_hx(
-    conectype,
+    connectype,
     pitch_h_,
     pitch_v_,
     num_cols,
@@ -526,6 +637,9 @@ def criar_header_hx(
     length_
 ):
 
+    if connectype != 'Cabeçote':
+        return None
+
     # Cálculo das dimensões da base inferior do cabeçote
     L_cab_b = pitch_h_ * num_cols * 1.1
     H_cab_b = pitch_v_ * num_rows * 2.5
@@ -537,7 +651,7 @@ def criar_header_hx(
             cq.Workplane("XY")
             .box(L_cab_b, H_cab_b, S_cab_b)
             .edges("|Z").fillet(chord_/2)
-        ).translate((pitch_h_ * num_cols / 2 - chord_, pitch_v_ * num_rows - espessura_h_, S_cab_b / 2))
+        ).translate((pitch_h_ * (num_cols-1) / 2, pitch_v_ * num_rows - espessura_h_, S_cab_b / 2))
 
         # Subtrai os perfis (furos) do cabeçote
         for profile in sketch_ext_list:
@@ -558,13 +672,13 @@ def criar_header_hx(
             cq.Workplane("XY")
             .box(L_cab_b, H_cab_b, S_cab_b)
             .edges("|Z").fillet(chord_/2)
-        ).translate((pitch_h_ * num_cols / 2 - chord_, pitch_v_ * num_rows - espessura_h_, S_cab_b / 2))
+        ).translate((pitch_h_ * (num_cols-1) / 2, pitch_v_ * num_rows - espessura_h_, S_cab_b / 2))
 
     # Cria o corpo superior do cabeçote
     header_body = (
         cq.Workplane("XY")
         .box(L_cab_b, H_cab_b, L_header)
-    ).translate((pitch_h_ * num_cols / 2 - chord_, pitch_v_ * num_rows - espessura_h_, -L_header / 2))
+    ).translate((pitch_h_ * (num_cols-1) / 2, pitch_v_ * num_rows - espessura_h_, -L_header / 2))
 
     ## Se offset_ for True, aplica shell interno antes do fillet
     header_body = header_body.faces("+Z").shell(-espessura_offset * 2).edges("|Z").fillet(chord_/2) if offset_ else header_body.edges("|Z").fillet(chord_/2)
@@ -579,7 +693,7 @@ def criar_header_hx(
     header_body2 = (
         cq.Workplane("XY")
         .box(L_cab_b, H_cab_b, L_header)
-    ).translate((pitch_h_ * num_cols / 2 - chord_, pitch_v_ * num_rows - espessura_h_, L_header / 2))
+    ).translate((pitch_h_ * (num_cols-1) / 2, pitch_v_ * num_rows - espessura_h_, L_header / 2))
 
     ## Aplica shell se necessário
     header_body2 = header_body2.faces("-Z").shell(-espessura_offset * 2).edges("|Z").fillet(chord_/2) if offset_ else header_body2.edges("|Z").fillet(chord_/2)
@@ -631,6 +745,7 @@ def criar_header_hx(
 
     return modelo_final2
 
+
 def adicionar_fittings(
     modelo_final2,
     diam_interno_fitting,
@@ -639,7 +754,6 @@ def adicionar_fittings(
     s1,
     s1_offset_list,
     set_fitting,
-    my_bar,
     num_cols,
     num_rows,
     pitch_h_,
@@ -664,7 +778,7 @@ def adicionar_fittings(
         .reset()
     )
 
-    if conectype == 'Curvas':
+    if connectype == 'Curvas':
         wp = cq.Workplane("XY")
 
         conexao_tubo_externa = wp.placeSketch(s1, sketch_tubo.moved(z=L_fitting)).loft(combine=True)
@@ -730,12 +844,12 @@ if 'active_page_2' not in st.session_state:
     st.session_state.st_chord = 15.
     st.session_state.st_h_c = 0.25
     st.session_state.st_p_v_h = 2.
-    st.session_state.st_p_h_c = 2.5
+    st.session_state.st_p_h_c = 1.5
     st.session_state.st_num_rows = 5
     st.session_state.st_num_cols = 4
     st.session_state.st_length = 200.
     st.session_state.st_espessura_offset = 1.
-    st.session_state.st_L_header = 10.
+    st.session_state.st_L_header = 11.
 
     st.session_state.extrude_button = False
 
@@ -779,7 +893,7 @@ h_c = col1.number_input("Espessura adimensional",format='%f',step=0.01,min_value
 
 p_v_h = col1.number_input("Pitch vertical adimensional",format='%f',step=0.1,min_value=1.8,max_value=10.,key='st_p_v_h')
 
-p_h_c = col1.number_input("Pitch horizontal adimensional",format='%f',step=0.1,min_value=0.6,max_value=5.,key='st_p_h_c')
+p_h_c = col1.number_input("Pitch horizontal adimensional",format='%f',step=0.1,min_value=1.0,max_value=5.,key='st_p_h_c')
 
 num_rows = col1.number_input("Número de fileiras de aerofólios",step=1,min_value=1,key='st_num_rows',help='Número de fileiras de aerofólios')
 
@@ -791,72 +905,76 @@ length = col1.number_input("Comprimento de tubos",format='%f',step=1.,min_value=
 
 
 ## Offset
+with col1.expander("Criar espessura no modelo"):
 
-offset_ = col1.toggle("Opcional: Criar uma espessura no modelo.", help='Ative para criar volume oco. Observação: as medidas selecionadas anteriormente valerão para o perfil externo.'
-                                          , value=True)
-if not offset_:
-    espessura_offset = st.session_state['st_espessura_offset']
-else:
-    espessura_offset = col1.number_input("Espessura do perfil",format='%f',step=0.5,min_value=0.01,key='st_espessura_offset', help='Espessura do perfil do modelo.')
+    offset_ = st.toggle("Opcional: Criar uma espessura no modelo.", help='Ative para criar volume oco. Observação: as medidas selecionadas anteriormente valerão para o perfil externo.'
+                                              , value=True)
+    if not offset_:
+        espessura_offset = st.session_state['st_espessura_offset']
+    else:
+        espessura_offset = st.number_input("Espessura do perfil",format='%f',step=0.5,min_value=0.01,key='st_espessura_offset', help='Espessura do perfil do modelo.')
 
 ##
 
 
 ## Set Scale Input
+with col1.expander("Aplicar escala"):
 
-set_scale = col1.toggle("Opcional: Escalar (não interfere na espessura)", help='Essa opção permite escalar o modelo gerado proporcionalmente em x,y,z.'
-                                          , value=False)
+    set_scale = st.toggle("Opcional: Escalar (não interfere na espessura)", help='Essa opção permite escalar o modelo gerado proporcionalmente em x,y,z.'
+                                              , value=False)
 
-if not set_scale:
-    set_scale = st.session_state['st_set_scale']
-    scale = 1
-else:
-    scale = col1.number_input("Escala",format='%f',step=0.5,min_value=0.01,key='st_scale')
+    if not set_scale:
+        set_scale = st.session_state['st_set_scale']
+        scale = 1
+    else:
+        scale = st.number_input("Escala",format='%f',step=0.5,min_value=0.01,key='st_scale')
 
 ##
 
 ## Selecting HX Tube Connections
+with col1.expander("Tipo de conexões"):
+    connectype = st.selectbox(
+        "Tipo de conexão entre tubos",
+        ("N/A", "Curvas", "Cabeçote"), index=0, help='Selecione como os tubos devem ser conectados uns aos outros'
+    )
 
-conectype = col1.selectbox(
-    "Tipo de conexão entre tubos",
-    ("N/A", "Curvas", "Cabeçote"), index=0, help='Selecione como os tubos devem ser conectados uns aos outros'
-)
-
-if conectype != 'Cabeçote':
-    L_header = st.session_state['st_L_header']
-else:
-    L_header = col1.number_input("Comprimento do Cabeçote", format='%f', step=1., key='st_L_header', help='Deve ser maior que o diâmetro de fitting, se esse existir.')
+    if connectype != 'Cabeçote':
+        L_header = st.session_state['st_L_header']
+    else:
+        L_header = st.number_input("Comprimento do Cabeçote", format='%f', step=1., key='st_L_header', help='Deve ser maior que o diâmetro de fitting, se esse existir.')
 
 ##
 
 ## Set Smooth Input
 
-with st.expander("Suavização"):
+with col1.expander("Suavização"):
 
-    suavizar = col1.toggle("Opcional: Suavizar", help='Essa opção permite suavizar ligeiramente a curva do perfil e acelerar a geração da geometria.'
+    suavizar = st.toggle("Opcional: Suavizar", help='Essa opção permite suavizar ligeiramente a curva do perfil e acelerar a geração da geometria.'
                                               , value=True)
 
     if not suavizar:
         suavizar = st.session_state['st_suavizar']
         suavizacao = st.session_state['st_suavizacao']
     else:
-        suavizacao = col1.number_input("Suavização",format='%f',step=0.0005,max_value=0.001,key='st_suavizacao')
+        suavizacao = st.number_input("Suavização",format='%f',step=0.0005,max_value=0.001,key='st_suavizacao')
 
 ##
 
 ## Fittings Entrada e Saída
 
-set_fitting = col1.toggle("Opcional: Inserir Fitting", help='Essa opção permite inserir uma tubulação circular na entrada e na saída do trocador.'
-                                          , value=False)
+with col1.expander("Fitting para entrada e saída"):
 
-if not set_fitting:
-    diam_interno_fitting = st.session_state['st_diam_interno_fitting']
-    espessura_fitting = st.session_state['st_espessura_fitting']
-    L_fitting = st.session_state['st_L_fitting']
-else:
-    diam_interno_fitting = col1.number_input("Diâmetro Interno Fitting", format='%f', step=1., key='st_diam_interno_fitting')
-    espessura_fitting = col1.number_input("Espessura Fitting", format='%f', step=1., key='st_espessura_fitting')
-    L_fitting = col1.number_input("Comprimento Fitting", format='%f', step=1., key='st_L_fitting')
+    set_fitting = st.toggle("Opcional: Inserir Fitting", help='Essa opção permite inserir uma tubulação circular na entrada e na saída do trocador.'
+                                              , value=False)
+
+    if not set_fitting:
+        diam_interno_fitting = st.session_state['st_diam_interno_fitting']
+        espessura_fitting = st.session_state['st_espessura_fitting']
+        L_fitting = st.session_state['st_L_fitting']
+    else:
+        diam_interno_fitting = st.number_input("Diâmetro Interno Fitting", format='%f', step=1., key='st_diam_interno_fitting')
+        espessura_fitting = st.number_input("Espessura Fitting", format='%f', step=1., key='st_espessura_fitting')
+        L_fitting = st.number_input("Comprimento Fitting", format='%f', step=1., key='st_L_fitting')
 
 ##
 
@@ -910,6 +1028,8 @@ if st.session_state.extrude_button:
             coordinates = [(round(float(df__coord_input['x'][i]), 8), round(float(df__coord_input['y'][i]), 8)) for i in range(len(df__coord_input['x']))]
 
             coordinates = centralizar_pontos_na_origem(coordinates) #*
+
+            simetry = detectar_simetria(coordinates)  # +
 
             coordinates = suavizar_contorno(coordinates, suavizar, suavizacao)
 
@@ -1025,6 +1145,9 @@ if st.session_state.extrude_button:
 
                 tube_profile = cq.Workplane("XY").placeSketch(s1).extrude(length_)
                 exporters.export(tube_profile, 'hx_profile.stl')
+                if connectype == 'N/A':
+                    exporters.export(tube_profile, 'hx_profile.step')
+
 
             except:
                 col2.error("Erro ao gerar modelo 3D.")
@@ -1034,38 +1157,44 @@ if st.session_state.extrude_button:
 
             ################# CURVAS
 
-            if conectype == 'Curvas':
+            if connectype == 'Curvas':
                 my_bar.progress(50, text='Conexões entre linhas')
 
                 #   CONEXÕES ENTRE LINHAS
 
-                modelo_final = adicionar_conexoes_entre_linhas(
-                    modelo_combinado=modelo_combinado,
-                    s1=s1,
-                    pitch_h_=pitch_h_,
-                    pitch_v_=pitch_v_,
-                    length_=length_,
-                    num_cols=num_cols,
-                    num_rows=num_rows,
-                    set_scale=set_scale,
-                    my_bar=my_bar
-                )
+                modelo_final = hx_lin(
+                        modelo_combinado,
+                        s1,
+                        pitch_h_,
+                        pitch_v_,
+                        length_,
+                        num_cols,
+                        num_rows,
+                        set_scale,
+                        simetry
+                    )
+
 
                 #   CONEXÕES ENTRE COLUNAS
 
                 my_bar.progress(70, text='Conexões entre colunas')
 
-                modelo_final2 = adicionar_conexoes_entre_colunas(
-                    modelo_final,
-                    s1,
-                    pitch_h_,
-                    pitch_v_,
-                    chord_,
-                    num_cols,
-                    num_rows,
-                    length_,
-                    my_bar
-                )
+                modelo_final2 = hx_col(
+                      pontos=pontos,
+                      scale=scale,
+                      set_scale=set_scale,
+                      espessura_offset=espessura_offset,
+                      s1=s1,
+                      s1_offset_list=s1_offset_list,
+                      offset_=offset_,
+                      pitch_h_=pitch_h_,
+                      pitch_v_=pitch_v_,
+                      length_=length_,
+                      num_cols=num_cols,
+                      num_rows=num_rows,
+                      modelo_final=modelo_final,
+                      simetry=simetry
+                  )
 
 
                 #   CONEXÕES DE ENTRADA E SAÍDA (FITTINGS)
@@ -1081,7 +1210,6 @@ if st.session_state.extrude_button:
                     s1,
                     s1_offset_list,
                     set_fitting,
-                    my_bar,
                     num_cols,
                     num_rows,
                     pitch_h_,
@@ -1092,11 +1220,11 @@ if st.session_state.extrude_button:
 
             ################# CABEÇOTE
 
-            elif conectype == 'Cabeçote':
+            elif connectype == 'Cabeçote':
                 my_bar.progress(50, text='Criando Headers')
 
                 modelo_final2 = criar_header_hx(
-                    conectype,
+                    connectype,
                     pitch_h_,
                     pitch_v_,
                     num_cols,
@@ -1160,11 +1288,12 @@ if st.session_state.extrude_button:
 
             solid_name = 'hx_final'
             sketch_name = 'sketch_hxairfoils.stl'
-            profile_name = 'hx_profile.stl'
+            profile_name = 'hx_profile'
             stl_file_sketch = str(path) + "/" + sketch_name
             stl_file_solid = str(path) + "/" + solid_name + '.stl'
             step_file_solid = str(path) + "/" + solid_name + '.step'
-            stl_file_profile = str(path) + "/" + profile_name
+            stl_file_profile = str(path) + "/" + profile_name + '.stl'
+            step_file_profile = str(path) + "/" + profile_name + '.step'
 
             # Create a download button for STL
             ## Sketch
@@ -1195,7 +1324,7 @@ if st.session_state.extrude_button:
                 use_container_width=True
             )
 
-            if conectype == 'Cabeçote':
+            if connectype == 'Cabeçote':
                 step_file_header = str(path) + "/" + 'header_body' + '.step'
                 col2.download_button(
                     label="Header (Solid) .step",
@@ -1206,14 +1335,32 @@ if st.session_state.extrude_button:
                     use_container_width=True
                 )
 
-            col2.download_button(
-                label="Tube Profile (Solid) .stl",
-                data=open(stl_file_profile, "rb").read(),
-                file_name=profile_name,
-                mime="application/stl",
-                on_click=manter_extrude_button_ativo,
-                use_container_width=True
-            )
+            if connectype == 'N/A':
+                col21.download_button(
+                    label="Tube Profile (Solid) .stl",
+                    data=open(stl_file_profile, "rb").read(),
+                    file_name=profile_name+'.stl',
+                    mime="application/stl",
+                    on_click=manter_extrude_button_ativo,
+                    use_container_width=True
+                )
+                col22.download_button(
+                    label="Tube Profile (Solid) .step",
+                    data=open(step_file_profile, "rb").read(),
+                    file_name=profile_name+'.step',
+                    mime="application/step",
+                    on_click=manter_extrude_button_ativo,
+                    use_container_width=True
+                )
+            else:
+                col2.download_button(
+                    label="Tube Profile (Solid) .stl",
+                    data=open(stl_file_profile, "rb").read(),
+                    file_name=profile_name+'.stl',
+                    mime="application/stl",
+                    on_click=manter_extrude_button_ativo,
+                    use_container_width=True
+                )
 
             my_bar.progress(100, text='Carregando')
 
