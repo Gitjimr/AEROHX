@@ -845,11 +845,11 @@ if 'active_page_2' not in st.session_state:
     st.session_state.st_h_c = 0.25
     st.session_state.st_p_v_h = 2.
     st.session_state.st_p_h_c = 1.5
-    st.session_state.st_num_rows = 5
-    st.session_state.st_num_cols = 4
-    st.session_state.st_length = 200.
+    st.session_state.st_num_rows = 4
+    st.session_state.st_num_cols = 3
+    st.session_state.st_length = 250.
     st.session_state.st_espessura_offset = 1.
-    st.session_state.st_L_header = 11.
+    st.session_state.st_L_header = 12.
 
     st.session_state.extrude_button = False
 
