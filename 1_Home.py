@@ -893,7 +893,7 @@ h_c = col1.number_input("Espessura adimensional",format='%f',step=0.01,min_value
 
 p_v_h = col1.number_input("Pitch vertical adimensional",format='%f',step=0.1,min_value=1.8,max_value=10.,key='st_p_v_h')
 
-p_h_c = col1.number_input("Pitch horizontal adimensional",format='%f',step=0.1,min_value=1.0,max_value=5.,key='st_p_h_c')
+p_h_c = col1.number_input("Pitch horizontal adimensional",format='%f',step=0.1,min_value=0.6,max_value=5.,key='st_p_h_c')
 
 num_rows = col1.number_input("Número de fileiras de aerofólios",step=1,min_value=1,key='st_num_rows',help='Número de fileiras de aerofólios')
 
