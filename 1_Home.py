@@ -641,9 +641,12 @@ def criar_header_hx(
         return None
 
     # Cálculo das dimensões da base inferior do cabeçote
-    L_cab_b = pitch_h_ * num_cols * 1.1
-    H_cab_b = pitch_v_ * num_rows * 2.5
+    L_cab_b = pitch_h_ * num_cols + chord_
+    H_cab_b = pitch_v_ * num_rows*2 + chord_
     S_cab_b = espessura_offset * 1.5
+    #L_cab_b = pitch_h_ * num_cols * 1.1
+    #H_cab_b = pitch_v_ * num_rows * 2.5
+    #S_cab_b = espessura_offset * 1.5
 
     if offset_ is True:
         # Cria a base inferior do cabeçote com arredondamento nos cantos verticais
