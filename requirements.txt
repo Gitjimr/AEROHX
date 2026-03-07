@@ -10,6 +10,5 @@ XlsxWriter==3.2.0
 pyvista==0.43.10
 opencv-python==4.11.0.86
 openpyxl==3.1.5
-streamlit-stl==0.0.6
 
 
