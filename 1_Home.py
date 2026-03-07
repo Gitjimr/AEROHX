@@ -315,8 +315,10 @@ def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75,
     mesh = pv.read(file_path)
 
     # pontos
-    np.array(mesh.points)
-    x, y, z = mesh.points.T
+    points = np.array(mesh.points)
+    x = points[:,0]
+    y = points[:,1]
+    z = points[:,2]
 
     faces = mesh.faces.reshape(-1, 4)[:, 1:]
 
@@ -1485,6 +1487,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
