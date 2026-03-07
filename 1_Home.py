@@ -1371,18 +1371,13 @@ if st.session_state.extrude_button:
                 my_bar.progress(90, text='Display')
 
                 try:
-                    displayCAD_streamlit(f'{path}/hx_final.stl', f"Visualização: hx_final.step")
+                    displayCAD_streamlit('hx_final.stl', f"Visualização: hx_final.step")
 
                     st.success("Modelo gerado com sucesso.")
                     st.session_state.st_sketch = result
                     st.session_state.st_solid = modelo_final2
 
                 except:
-                    displayCAD_streamlit('hx_final.stl', f"Visualização: hx_final.step")
-
-                    st.success("Modelo gerado com sucesso.")
-                    st.session_state.st_sketch = result
-                    st.session_state.st_solid = modelo_final2
                     pass
 
                 my_bar.progress(95, text='Arquivos .STL')
@@ -1481,6 +1476,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
