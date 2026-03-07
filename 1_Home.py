@@ -1365,13 +1365,13 @@ if st.session_state.extrude_button:
 
                 ############################### RESULTS
 
-                exporters.export(modelo_final2, 'hx_final.stl')
+                exporters.export(modelo_final2, f'{path}/hx_final.stl)
                 exporters.export(modelo_final2, 'hx_final.step')
 
                 my_bar.progress(90, text='Display')
 
                 try:
-                    displayCAD_streamlit(f'hx_final.stl', f"Visualização: hx_final.step")
+                    displayCAD_streamlit(f'{path}/hx_final.stl', f"Visualização: hx_final.step")
 
                     st.success("Modelo gerado com sucesso.")
                     st.session_state.st_sketch = result
@@ -1477,6 +1477,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
