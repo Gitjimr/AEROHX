@@ -300,61 +300,39 @@ def plot_airfoils_alternados_plotly(contours):
 
 
 def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75):
-    ext = os.path.splitext(file_path)[1].lower()
+    time.sleep(0.5)
+    # Visualiza malha (STL)
+    mesh = pv.read(file_path)
 
-    # Se for STEP, converte para STL com CadQuery primeiro
-    if ext in ['.step', '.stp']:
-        stl_path = file_path.replace(ext, '.stl') 
-        
-        try:
-            shape = cq.importers.importStep(file_path)
-            exporters.export(shape, stl_path)
-            file_to_read = stl_path
-        except Exception as e:
-            st.error(f"Erro ao converter STEP para STL: {e}")
-            return
-    else:
-        file_to_read = file_path
+    # pontos
+    x, y, z = mesh.points.T
 
-    try:
-        # Lê a malha com PyVista
-        mesh = pv.read(file_to_read)
+    # a gente vai fazer isso para dividir a malha do objeto em vários triangulos
+    faces = mesh.faces.reshape(-1, 4)[:, 1:]
 
-        # Força triangulação para garantir polígonos de 3 lados
-        mesh = mesh.triangulate()
+    # aqui a gente viai criar uma figura do plotly como um objeto 3d passando os pontos do objeto (x,y,z)
+    # e os triangulos feitos com esses pontos (i, j, k)
+    # estou seguindo o mesmo princípio da função de displaycad que coloquei no colab
+    # vc também pode controlar a opacidade, eu deixei 0.75 pois acho suficiente pra ver um pouco o interior
+    # sem ficar tão transparente
 
-        # Extração segura usando np.asarray() para contornar o bug de propriedades do VTK
-        points = np.asarray(mesh.points)
-        x, y, z = points.T
+    fig = go.Figure(data=[go.Mesh3d(
+        x=x, y=y, z=z,
+        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+        opacity=opacity
+    )])
 
-        faces = np.asarray(mesh.faces).reshape(-1, 4)[:, 1:]
+    # e aqui o layout a ser exibido
+    fig.update_layout(
+        width=1200,
+        height=800,
+        scene=dict(aspectmode="data"),
+        title=title,
+        margin=dict(l=0, r=0, t=40, b=0)
+    )
 
-        # Cria a figura do Plotly
-        fig = go.Figure(data=[go.Mesh3d(
-            x=x, y=y, z=z,
-            i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-            opacity=opacity,
-            color='lightgray',
-            flatshading=True
-        )])
-
-        # Configura o layout
-        fig.update_layout(
-            width=1200,
-            height=800,
-            scene=dict(aspectmode="data"),
-            title=title,
-            margin=dict(l=0, r=0, t=40, b=0)
-        )
-
-        # Renderiza no Streamlit
-        st.plotly_chart(fig, use_container_width=True)
-
-    except Exception as e:
-        st.error(f"Erro ao visualizar modelo 3D no PyVista: {e}")
-
-    except Exception as e:
-        st.error(f"Erro na visualização 3D: {e}")
+    # aqui que muda, a gente vai usar essa função do streamlit pra gráficos plotly
+    st.plotly_chart(fig, use_container_width=True)
 
 def manter_extrude_button_ativo():
     st.session_state.extrude_button = True
@@ -1504,6 +1482,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
