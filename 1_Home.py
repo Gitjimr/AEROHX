@@ -304,6 +304,8 @@ def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75):
     # Visualiza malha (STL)
     mesh = pv.read(file_path)
 
+    st.write(type(mesh.points))
+    
     points = np.asarray(mesh.points)
 
     # pontos
@@ -1484,6 +1486,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
