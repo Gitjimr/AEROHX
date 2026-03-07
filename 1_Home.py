@@ -39,7 +39,7 @@ import os  # Required to check if the file exists
 from os import listdir
 from os.path import isfile, join
 
-# import cv2  # OpenCV
+import cv2  # OpenCV
 
 import io
 import time
@@ -1479,6 +1479,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
