@@ -300,18 +300,11 @@ def plot_airfoils_alternados_plotly(contours):
 
 
 def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75):
-    time.sleep(0.5)
     # Visualiza malha (STL)
     mesh = pv.read(file_path)
 
-    points = np.asarray(mesh.points)
-    st.write("tipo mesh.points:", type(mesh.points))
-    st.write("tipo points:", type(points))
-
     # pontos
-    x = points[:,0]
-    y = points[:,1]
-    z = points[:,2]
+    x, y, z = mesh.points.T
 
     # a gente vai fazer isso para dividir a malha do objeto em vários triangulos
     faces = mesh.faces.reshape(-1, 4)[:, 1:]
@@ -1488,6 +1481,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
