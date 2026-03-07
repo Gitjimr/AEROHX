@@ -299,58 +299,38 @@ def plot_airfoils_alternados_plotly(contours):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75,
-                         stl_tol: float = 0.1, stl_ang: float = 0.3):
-
-    ext = os.path.splitext(file_path)[1].lower()
-
-    # Se for STEP, converte para STL primeiro para extrair a malha
-    if ext in [".step", ".stp"]:
-        stl_path = file_path.rsplit(".", 1)[0] + "_view.stl"
-        
-        # Importa o shape do STEP e exporta via CadQuery
-        shape = cq.importers.importStep(file_path)
-        cq.exporters.export(shape, stl_path, tolerance=stl_tol, angularTolerance=stl_ang)
-        
-        # Atualiza o caminho para ler o STL gerado
-        file_path = stl_path
-
-    # Lê a malha (STL) com PyVista
+def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75):
+    # Visualiza malha (STL)
     mesh = pv.read(file_path)
 
-    # Extrai os vértices (pontos)
-    points = np.array(mesh.points)
-    x = points[:, 0]
-    y = points[:, 1]
-    z = points[:, 2]
+    # pontos
+    x, y, z = mesh.points.T
 
-    # Em STLs, as faces vêm no formato flat no PyVista: [3, i, j, k, 3, i, j, k...]
-    # O reshape(-1, 4) agrupa cada triângulo, e o [:, 1:] ignora a coluna do número "3"
+    # a gente vai fazer isso para dividir a malha do objeto em vários triangulos
     faces = mesh.faces.reshape(-1, 4)[:, 1:]
 
-    # Cria a figura 3D com Plotly
+    # aqui a gente viai criar uma figura do plotly como um objeto 3d passando os pontos do objeto (x,y,z)
+    # e os triangulos feitos com esses pontos (i, j, k)
+    # estou seguindo o mesmo princípio da função de displaycad que coloquei no colab
+    # vc também pode controlar a opacidade, eu deixei 0.75 pois acho suficiente pra ver um pouco o interior
+    # sem ficar tão transparente
+
     fig = go.Figure(data=[go.Mesh3d(
         x=x, y=y, z=z,
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-        opacity=opacity,
-        color='lightgray', # Uma cor neutra ajuda a ver detalhes de superfícies
-        flatshading=True   # Essencial para geometrias CAD, para não "arredondar" quinas retas
+        opacity=opacity
     )])
 
-    # Configuração do layout da cena
+    # e aqui o layout a ser exibido
     fig.update_layout(
-        height=600, # Ajustado para caber melhor na tela padrão do Streamlit
-        scene=dict(
-            aspectmode="data", # Mantém a proporção real do modelo (escala 1:1 nos eixos)
-            xaxis_title='X [mm]',
-            yaxis_title='Y [mm]',
-            zaxis_title='Z [mm]'
-        ),
+        width=1200,
+        height=800,
+        scene=dict(aspectmode="data"),
         title=title,
         margin=dict(l=0, r=0, t=40, b=0)
     )
 
-    # Renderiza no Streamlit
+    # aqui que muda, a gente vai usar essa função do streamlit pra gráficos plotly
     st.plotly_chart(fig, use_container_width=True)
 
 def manter_extrude_button_ativo():
@@ -1501,6 +1481,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
