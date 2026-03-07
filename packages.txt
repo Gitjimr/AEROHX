@@ -1,5 +1,4 @@
 gfortran
 libglib2.0-dev
-libgl1-mesa-glx
 xvfb
 libgl1
