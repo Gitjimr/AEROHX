@@ -304,40 +304,54 @@ def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75,
 
     ext = os.path.splitext(file_path)[1].lower()
 
-    # Se for STEP, converte pra STL primeiro
+    # Se for STEP, converte para STL primeiro para extrair a malha
     if ext in [".step", ".stp"]:
         stl_path = file_path.rsplit(".", 1)[0] + "_view.stl"
+        
+        # Importa o shape do STEP e exporta via CadQuery
         shape = cq.importers.importStep(file_path)
-        exporters.export(shape, stl_path, tolerance=stl_tol, angularTolerance=stl_ang)
+        cq.exporters.export(shape, stl_path, tolerance=stl_tol, angularTolerance=stl_ang)
+        
+        # Atualiza o caminho para ler o STL gerado
         file_path = stl_path
 
-    # Visualiza malha (STL)
+    # Lê a malha (STL) com PyVista
     mesh = pv.read(file_path)
 
-    # pontos
+    # Extrai os vértices (pontos)
     points = np.array(mesh.points)
-    x = points[:,0]
-    y = points[:,1]
-    z = points[:,2]
+    x = points[:, 0]
+    y = points[:, 1]
+    z = points[:, 2]
 
+    # Em STLs, as faces vêm no formato flat no PyVista: [3, i, j, k, 3, i, j, k...]
+    # O reshape(-1, 4) agrupa cada triângulo, e o [:, 1:] ignora a coluna do número "3"
     faces = mesh.faces.reshape(-1, 4)[:, 1:]
 
+    # Cria a figura 3D com Plotly
     fig = go.Figure(data=[go.Mesh3d(
         x=x, y=y, z=z,
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-        opacity=opacity
+        opacity=opacity,
+        color='lightgray', # Uma cor neutra ajuda a ver detalhes de superfícies
+        flatshading=True   # Essencial para geometrias CAD, para não "arredondar" quinas retas
     )])
 
+    # Configuração do layout da cena
     fig.update_layout(
-        width=1200,
-        height=800,
-        scene=dict(aspectmode="data"),
+        height=600, # Ajustado para caber melhor na tela padrão do Streamlit
+        scene=dict(
+            aspectmode="data", # Mantém a proporção real do modelo (escala 1:1 nos eixos)
+            xaxis_title='X [mm]',
+            yaxis_title='Y [mm]',
+            zaxis_title='Z [mm]'
+        ),
         title=title,
         margin=dict(l=0, r=0, t=40, b=0)
     )
 
+    # Renderiza no Streamlit
     st.plotly_chart(fig, use_container_width=True)
-
 
 def manter_extrude_button_ativo():
     st.session_state.extrude_button = True
@@ -1487,6 +1501,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
