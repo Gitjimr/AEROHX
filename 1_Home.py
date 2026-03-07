@@ -300,61 +300,51 @@ def plot_airfoils_alternados_plotly(contours):
 
 
 def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75):
-    # 1. Descobre qual é a extensão do arquivo recebido
     ext = os.path.splitext(file_path)[1].lower()
 
-    # 2. Se for um arquivo STEP, o PyVista não lê. Então usamos o CadQuery para converter para STL primeiro.
+    # Se for STEP, converte para STL com CadQuery
     if ext in ['.step', '.stp']:
-        # Cria um nome temporário trocando .step por .stl
         stl_path = file_path.replace(ext, '.stl') 
-        
-        # Importa o sólido e exporta a malha
         shape = cq.importers.importStep(file_path)
         exporters.export(shape, stl_path)
-        
-        # Diz para o PyVista ler o arquivo STL que acabamos de gerar
         file_to_read = stl_path
     else:
-        # Se já for STL (ou outro formato de malha), lê direto
         file_to_read = file_path
 
-    # 3. Agora o PyVista lê o arquivo com segurança
     try:
-        mesh = pv.read(file_to_read)
+        # Lê o arquivo usando trimesh em vez de pyvista
+        mesh = trimesh.load(file_to_read)
+
+        # O trimesh já retorna numpy arrays limpinhos!
+        # mesh.vertices contém os pontos (x, y, z)
+        # mesh.faces contém os triângulos (i, j, k)
+        
+        x, y, z = mesh.vertices.T
+        i, j, k = mesh.faces.T
+
+        # Cria a figura do plotly
+        fig = go.Figure(data=[go.Mesh3d(
+            x=x, y=y, z=z,
+            i=i, j=j, k=k,
+            opacity=opacity,
+            color='lightgray',
+            flatshading=True
+        )])
+
+        # Layout a ser exibido
+        fig.update_layout(
+            width=1200,
+            height=800,
+            scene=dict(aspectmode="data"),
+            title=title,
+            margin=dict(l=0, r=0, t=40, b=0)
+        )
+
+        # Renderiza no Streamlit
+        st.plotly_chart(fig, use_container_width=True)
+
     except Exception as e:
-        st.error(f"Erro ao abrir o modelo 3D: {e}")
-        return
-
-    # Garante a triangulação da malha
-    mesh = mesh.triangulate()
-
-    # Extrai os pontos garantindo que é um numpy array (Resolve o erro do Streamlit Cloud)
-    points = np.array(mesh.points)
-    x, y, z = points.T
-
-    # Divide a malha do objeto em vários triangulos
-    faces = mesh.faces.reshape(-1, 4)[:, 1:]
-
-    # Cria a figura do plotly
-    fig = go.Figure(data=[go.Mesh3d(
-        x=x, y=y, z=z,
-        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-        opacity=opacity,
-        color='lightgray',
-        flatshading=True
-    )])
-
-    # Layout a ser exibido
-    fig.update_layout(
-        width=1200,
-        height=800,
-        scene=dict(aspectmode="data"),
-        title=title,
-        margin=dict(l=0, r=0, t=40, b=0)
-    )
-
-    # Renderiza no Streamlit
-    st.plotly_chart(fig, use_container_width=True)
+        st.error(f"Erro na visualização 3D: {e}")
 
 def manter_extrude_button_ativo():
     st.session_state.extrude_button = True
@@ -1504,6 +1494,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
