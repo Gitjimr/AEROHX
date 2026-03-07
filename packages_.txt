@@ -1,4 +1,2 @@
 gfortran
-libglib2.0-dev
-xvfb
 libgl1
