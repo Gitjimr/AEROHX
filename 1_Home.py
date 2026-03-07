@@ -305,7 +305,8 @@ def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75):
     mesh = pv.read(file_path)
 
     points = np.asarray(mesh.points)
-    st.write(type(mesh.points))
+    st.write("tipo mesh.points:", type(mesh.points))
+    st.write("tipo points:", type(points))
 
     # pontos
     x, y, z = mesh.points.T
@@ -1485,6 +1486,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
