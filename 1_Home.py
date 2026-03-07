@@ -302,36 +302,43 @@ def plot_airfoils_alternados_plotly(contours):
 def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75):
     ext = os.path.splitext(file_path)[1].lower()
 
-    # Se for STEP, converte para STL com CadQuery
+    # Se for STEP, converte para STL com CadQuery primeiro
     if ext in ['.step', '.stp']:
         stl_path = file_path.replace(ext, '.stl') 
-        shape = cq.importers.importStep(file_path)
-        exporters.export(shape, stl_path)
-        file_to_read = stl_path
+        
+        try:
+            shape = cq.importers.importStep(file_path)
+            exporters.export(shape, stl_path)
+            file_to_read = stl_path
+        except Exception as e:
+            st.error(f"Erro ao converter STEP para STL: {e}")
+            return
     else:
         file_to_read = file_path
 
     try:
-        # Lê o arquivo usando trimesh em vez de pyvista
-        mesh = trimesh.load(file_to_read)
+        # Lê a malha com PyVista
+        mesh = pv.read(file_to_read)
 
-        # O trimesh já retorna numpy arrays limpinhos!
-        # mesh.vertices contém os pontos (x, y, z)
-        # mesh.faces contém os triângulos (i, j, k)
-        
-        x, y, z = mesh.vertices.T
-        i, j, k = mesh.faces.T
+        # Força triangulação para garantir polígonos de 3 lados
+        mesh = mesh.triangulate()
 
-        # Cria a figura do plotly
+        # Extração segura usando np.asarray() para contornar o bug de propriedades do VTK
+        points = np.asarray(mesh.points)
+        x, y, z = points.T
+
+        faces = np.asarray(mesh.faces).reshape(-1, 4)[:, 1:]
+
+        # Cria a figura do Plotly
         fig = go.Figure(data=[go.Mesh3d(
             x=x, y=y, z=z,
-            i=i, j=j, k=k,
+            i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
             opacity=opacity,
             color='lightgray',
             flatshading=True
         )])
 
-        # Layout a ser exibido
+        # Configura o layout
         fig.update_layout(
             width=1200,
             height=800,
@@ -342,6 +349,9 @@ def displayCAD_streamlit(file_path: str, title: str, opacity: float = 0.75):
 
         # Renderiza no Streamlit
         st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Erro ao visualizar modelo 3D no PyVista: {e}")
 
     except Exception as e:
         st.error(f"Erro na visualização 3D: {e}")
@@ -1494,6 +1504,7 @@ else:
     col2.markdown("")
 
     # https://aerohx-xbgevddyrwrida74b4hvnx.streamlit.app/
+
 
 
 
